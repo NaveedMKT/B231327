@@ -18,7 +18,7 @@ When you click the **Knit** button a document will be generated that includes bo
 
 
 The MAIN Research Question
-How does the prescription of antibiotics for hospital acquired infections vary across
+How does the prescription of weight loss drugs (specifically GLP-1 antagonists) vary across socioeconomically diverse regions in Scotland in 2023?
 
 
 ## The Libraries
@@ -30,6 +30,8 @@ library(tidyverse)
 library(here)
 library(janitor)
 library(gt)
+library(sf)
+library(ggspatial)
 ```
 
 ## The Data
@@ -37,21 +39,30 @@ library(gt)
 This section contains the code for loading in all the required datasets. 
 
 ```{r pressure, echo=FALSE}
-data_aug2024 <- read_csv("https://www.opendata.nhs.scot/dataset/84393984-14e9-4b0d-a797-b288db64d088/resource/a42762ac-47cb-4fb6-b9b1-2478a588c0ed/download/pitc202403.csv") %>% 
+files <- list.files(here("data", "year_data"), pattern = "csv", full.names = TRUE)
+
+year_data <- files %>%
+  map_dfr(~read_csv(., col_types = cols(
+    DMDCode = col_character()
+  ))) %>%
   clean_names()
-data_july2024 <- read_csv("https://www.opendata.nhs.scot/dataset/84393984-14e9-4b0d-a797-b288db64d088/resource/1cb425fc-640c-4b37-9013-f8e97f274085/download/pitc202407.csv") %>% 
-  clean_names()
+
 hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b534-d6e17229cc7b/resource/652ff726-e676-4a20-abda-435b98dd7bdc/download/hb14_hb19.csv") %>% 
   clean_names()
+
 special_hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/65402d20-f0f1-4cee-a4f9-a960ca560444/resource/0450a5a2-f600-4569-a9ae-5d6317141899/download/special-health-boards_19022021.csv") %>% 
   clean_names()
 
-#Possible way to do the multiple files
-#combined_data <-
-#  list.files(path = here("data"), pattern = "*.csv") %>% 
-#  map_df(~read_csv(.))
-
-#This is the assessment document
+  population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), skip = 10) %>% 
+  rename(Spare = "...6",
+         hb_name = "Health Board Area 2019",
+         hb_population = Count) %>% 
+  filter(Age == "All people" & Sex == "All people") %>% 
+  select(hb_name, hb_population) %>% 
+  mutate(hb_name = paste("NHS", hb_name)) %>% 
+    clean_names()
+  
+  NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp"))
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
@@ -59,10 +70,36 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 This section of code joins the various datasets of interest to create the joined data.
 It then filters based on the relevant requirements.  
 ```{r}
-main_data <- full_join(data_aug2024, hb_data, by = join_by(hbt == hb)) %>% 
-  full_join(., data_july2024)
-
-antibiotic_data <- main_data %>% filter(str_detect(bnf_item_description, "VANCOMYCIN|FIDAXOMICIN")) %>% 
-  group_by(hb_name, bnf_item_description) %>% 
+weightdrug_data <- right_join(hb_data, year_data, by = join_by(hb == hbt)) %>% 
+  filter(str_detect(bnf_item_description, "GLUTIDE|OZEMPIC|SAXENDA|TRULICITY")) %>% 
+  group_by(hb_name, hb, bnf_item_description) %>% 
   summarise(paid_quantity = sum(paid_quantity))
+
+joined_data <- left_join(weightdrug_data, population_data) %>% 
+  left_join(., NHS_healthboards, by = join_by(hb == HBCode))
 ```
+
+This section of code generates a graph. 
+```{r}
+weightdrug_data %>% 
+  ggplot(aes(y = paid_quantity, x = reorder(hb_name, paid_quantity))) +
+  geom_col() +
+  coord_flip()+
+  labs(title = "No. of weight loss drug prescriptions per health board", x = "Health Board Name", y = "Weight Loss Drugs Prescriptions per person")
+
+joined_data %>% 
+ggplot(aes(geometry = geometry, fill = paid_quantity)) +
+  geom_sf() +
+  scale_fill_distiller(palette = "GnBu") +
+  labs(title = "Number of Weight Loss Drug Prescriptions", subtitle = "In Scotland", fill = "Total No. of Prescriptions") +  
+  annotation_scale(location = "tl") +
+  annotation_north_arrow(
+    location = "tl",    
+    pad_y = unit(0.5, "in"),    
+    style = north_arrow_nautical(
+      fill = c("blue", "white"),      
+      line_col = "grey20"
+    ) 
+  )
+```
+
