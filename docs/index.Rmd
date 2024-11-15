@@ -9,15 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+## Research Question
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-
-
-The MAIN Research Question
 How does the prescription of weight loss drugs (specifically GLP-1 antagonists) vary across socioeconomically diverse regions in Scotland in 2023?
 
 
@@ -53,7 +46,11 @@ hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b5
 special_hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/65402d20-f0f1-4cee-a4f9-a960ca560444/resource/0450a5a2-f600-4569-a9ae-5d6317141899/download/special-health-boards_19022021.csv") %>% 
   clean_names()
 
-  population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), skip = 10) %>% 
+deprivation_data <- read_csv("https://www.opendata.nhs.scot/dataset/78d41fa9-1a62-4f7b-9edb-3e8522a93378/resource/acade396-8430-4b34-895a-b3e757fa346e/download/simd2020v2_22062020.csv") %>% 
+  select(HB, SIMD2020V2CountryDecile) %>% 
+  clean_names()
+
+population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), skip = 10) %>% 
   rename(Spare = "...6",
          hb_name = "Health Board Area 2019",
          hb_population = Count) %>% 
@@ -75,12 +72,31 @@ weightdrug_data <- right_join(hb_data, year_data, by = join_by(hb == hbt)) %>%
   group_by(hb_name, hb, bnf_item_description) %>% 
   summarise(paid_quantity = sum(paid_quantity))
 
-joined_data <- left_join(weightdrug_data, population_data) %>% 
+joined_data <- left_join(weightdrug_data, population_data) %>%
   left_join(., NHS_healthboards, by = join_by(hb == HBCode))
+
+joined_data <- left_join(joined_data, deprivation_data, by = join_by(hb == hb))
 ```
 
-This section of code generates a graph. 
+This section of code generates a graph.
+
+First graph shows the comparison between SIMD and prescriptions of weigh loss drugs.
+
+The second and third graph show the distribution of these prescriptions around Scotland.
+
+I would like to explore the relationship between BMI and deprivaton and how that affects prescription of weight loss drugs.
+
+
 ```{r}
+joined_data %>% 
+ggplot(aes(x = paid_quantity, y = simd2020v2country_decile)) +
+  geom_smooth() +
+  theme(axis.text.x = element_text( 
+    angle = 90,
+    size=7, 
+    face=3)) +
+  labs(title = "Prescriptions vs SIMD", x = "Prescriptions", y = "SIMD")
+
 weightdrug_data %>% 
   ggplot(aes(y = paid_quantity, x = reorder(hb_name, paid_quantity))) +
   geom_col() +
