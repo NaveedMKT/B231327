@@ -6,13 +6,18 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
 ```
 
 ## Research Question
 
-How does the prescription of weight loss drugs (specifically GLP-1 antagonists) vary across socioeconomically diverse regions in Scotland in 2023?
+How does the prescription of weight loss drugs (specifically GLP-1 antagonists) vary across socioeconomically diverse regions in Scotland and what relationship does it have with cardiovascular mortality in 2023?
 
+## Introduction
+
+
+
+POSSIBLY ADD STROKE OR HEART MORTALITY DATASETS IN TO ADD MORE DEPTH TO THE TOPIC!!!!!!!!
 
 ## The Libraries
 
@@ -31,7 +36,7 @@ library(ggspatial)
 
 This section contains the code for loading in all the required datasets. 
 
-```{r pressure, echo=FALSE}
+```{r pressure, echo=FALSE, results = "hide"}
 files <- list.files(here("data", "year_data"), pattern = "csv", full.names = TRUE)
 
 year_data <- files %>%
@@ -39,16 +44,21 @@ year_data <- files %>%
     DMDCode = col_character()
   ))) %>%
   clean_names()
+#Loads in the data for prescriptions across 2022
 
 hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b534-d6e17229cc7b/resource/652ff726-e676-4a20-abda-435b98dd7bdc/download/hb14_hb19.csv") %>% 
   clean_names()
+#Loads in the data for healthboard names
 
 special_hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/65402d20-f0f1-4cee-a4f9-a960ca560444/resource/0450a5a2-f600-4569-a9ae-5d6317141899/download/special-health-boards_19022021.csv") %>% 
   clean_names()
+#Loads in data for special healthboards
 
 deprivation_data <- read_csv("https://www.opendata.nhs.scot/dataset/78d41fa9-1a62-4f7b-9edb-3e8522a93378/resource/acade396-8430-4b34-895a-b3e757fa346e/download/simd2020v2_22062020.csv") %>% 
-  select(HB, SIMD2020V2CountryDecile) %>% 
+  group_by(HB) %>%
+  summarise(average_SIMD = mean(SIMD2020V2CountryDecile)) %>%
   clean_names()
+#Loads in the average deprivation index for each health board
 
 population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), skip = 10) %>% 
   rename(Spare = "...6",
@@ -58,55 +68,66 @@ population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), 
   select(hb_name, hb_population) %>% 
   mutate(hb_name = paste("NHS", hb_name)) %>% 
     clean_names()
+#Loads in the population data per health board
   
-  NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp"))
-```
+  NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp")) 
+#Loads in the data for the creation of the map
+  
+geography_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b534-d6e17229cc7b/resource/395476ab-0720-4740-be07-ff4467141352/download/dz2011_codes_and_labels_21042020.csv") %>% 
+  clean_names()
+#Loads in the names for the council area
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+geography_data <- geography_data %>%
+  group_by(hb) %>%
+  summarise(across(everything(), ~head(., 1)))  
+
+gp_data <- read_csv("https://www.opendata.nhs.scot/dataset/e3300e98-cdd2-4f4e-a24e-06ee14fcc66c/resource/cec9341e-ccba-4c71-afe4-a614f5e97b9f/download/practice_listsizes_oct2024-open-data.csv") %>% 
+  clean_names()
+#Loads in the data for each GP and includes the population as well
+
+gp_data <- gp_data %>%
+  group_by(practice_code) %>%
+  summarise(across(everything(), ~head(., 1)))
+#Prevents the creation of multiple observations
+```
 
 This section of code joins the various datasets of interest to create the joined data.
 It then filters based on the relevant requirements.  
-```{r}
-weightdrug_data <- right_join(hb_data, year_data, by = join_by(hb == hbt)) %>% 
+```{r, results = "hide"}
+#Possible pivoting may be required
+weightdrug_data <- right_join(hb_data, year_data, by = join_by(hb == hbt)) %>% #Joins the health board names with the prescriptions dataset
+  left_join(., special_hb_data, by = join_by(hb == shb)) %>% #Joins in the special health board data
   filter(str_detect(bnf_item_description, "GLUTIDE|OZEMPIC|SAXENDA|TRULICITY")) %>% 
   group_by(hb_name, hb, bnf_item_description) %>% 
-  summarise(paid_quantity = sum(paid_quantity))
+  summarise(paid_quantity = sum(paid_quantity)) #Filters for the GLP-1 antagonists and summarizes paid quantity
 
 joined_data <- left_join(weightdrug_data, population_data) %>%
   left_join(., NHS_healthboards, by = join_by(hb == HBCode))
+#Joins in population data and geography data for the map
 
-joined_data <- left_join(joined_data, deprivation_data, by = join_by(hb == hb))
+final_data <- left_join(joined_data, deprivation_data, by = join_by(hb == hb))
+#Adds in deprivation index for each health board
 ```
 
-This section of code generates a graph.
+Possible Code
+```{r, results = "hide"}
+#Possible pivoting may be required
+weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>%
+  left_join(., geography_data, by = join_by(hscp == hscp)) %>% 
+  filter(str_detect(bnf_item_description, "GLUTIDE|OZEMPIC|SAXENDA|TRULICITY")) %>% 
+  group_by(hscp, hscp_name, bnf_item_description) %>%  
+  summarize(paid_quantity = sum(paid_quantity))
 
-First graph shows the comparison between SIMD and prescriptions of weigh loss drugs.
+final_data <- left_join(weightdrug_data, deprivation_data)
+```
 
-The second and third graph show the distribution of these prescriptions around Scotland.
-
-I would like to explore the relationship between BMI and deprivaton and how that affects prescription of weight loss drugs.
-
+This graph show the distribution of these prescriptions around Scotland.
 
 ```{r}
 joined_data %>% 
-ggplot(aes(x = paid_quantity, y = simd2020v2country_decile)) +
-  geom_smooth() +
-  theme(axis.text.x = element_text( 
-    angle = 90,
-    size=7, 
-    face=3)) +
-  labs(title = "Prescriptions vs SIMD", x = "Prescriptions", y = "SIMD")
-
-weightdrug_data %>% 
-  ggplot(aes(y = paid_quantity, x = reorder(hb_name, paid_quantity))) +
-  geom_col() +
-  coord_flip()+
-  labs(title = "No. of weight loss drug prescriptions per health board", x = "Health Board Name", y = "Weight Loss Drugs Prescriptions per person")
-
-joined_data %>% 
 ggplot(aes(geometry = geometry, fill = paid_quantity)) +
   geom_sf() +
-  scale_fill_distiller(palette = "GnBu") +
+  scale_fill_distiller(palette = "RdYlBu", limits = c(0, 17500), oob = scales::squish) +
   labs(title = "Number of Weight Loss Drug Prescriptions", subtitle = "In Scotland", fill = "Total No. of Prescriptions") +  
   annotation_scale(location = "tl") +
   annotation_north_arrow(
@@ -116,6 +137,67 @@ ggplot(aes(geometry = geometry, fill = paid_quantity)) +
       fill = c("blue", "white"),      
       line_col = "grey20"
     ) 
-  )
+  )+
+  # Add health board names as labels
+  geom_sf_text(aes(label = hb_name), size = 2, color = "black", fontface = "bold")  # Adjust size and color of the text
 ```
 
+Two other graphs
+
+```{r}
+final_data %>% 
+ggplot(aes(x = average_simd, y = paid_quantity)) +
+  geom_point() +
+  theme(axis.text.x = element_text( 
+    angle = 90,
+    size=7, 
+    face=3)) +
+  labs(title = "Prescriptions vs SIMD", y = "Prescriptions", x = "SIMD")
+#Possibly use boxplots after making as factor
+
+weightdrug_data %>% 
+  ggplot(aes(y = paid_quantity, x = reorder(hscp_name, paid_quantity))) +
+  geom_col() +
+  coord_flip()+
+  labs(title = "No. of weight loss drug prescriptions per health board", x = "Health Board Name", y = "Weight Loss Drugs Prescriptions per person")
+```
+
+GT Table Data
+```{r}
+  gt_data <- final_data %>%
+  mutate(drug_category = case_when(
+    str_detect(bnf_item_description, "OZEMPIC|SEMAGLUTIDE") ~ "Semaglutide",
+    str_detect(bnf_item_description, "SAXENDA|LIRAGLUTIDE") ~ "Liraglutide",
+    str_detect(bnf_item_description, "TRULICITY|DULAGLUTIDE") ~ "Dulaglutide",
+    TRUE ~ "Other"
+  )) %>%
+  group_by(hb_name, drug_category) %>%
+  summarise(total_paid_quantity = sum(paid_quantity, na.rm = TRUE)/head(hb_population, 1) * 100000,
+            ar_simd = mean(average_simd, na.rm = TRUE)) %>%
+  arrange(hb_name, drug_category)
+#Use ifelse or casewhen to get a count of each weight loss drug
+
+  gt_data <- na.omit(gt_data)
+#Remember to find a different way to do this
+  
+gt_data %>%  
+  gt() %>% 
+     cols_label(
+       drug_category = "Drug Category", 
+       total_paid_quantity = "Sum of Prescriptions", 
+       ar_simd = "Average SIMD"
+     ) %>% 
+     cols_align(
+       align = "center",
+       columns = everything()
+     ) %>% 
+  summary_rows(columns = c(total_paid_quantity),
+               fns = list(Average = ~round(mean(., na.rm = TRUE), 2))) %>% 
+  grand_summary_rows(columns = c(total_paid_quantity, ar_simd), 
+                     fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% 
+     fmt_number(columns = c(total_paid_quantity, ar_simd), decimals = 2) %>% 
+     tab_header(title = "Prescriptions of Weight Loss Drugs and How That Compares Across Socieconomically Diverse Regions",
+                subtitle = "Grouped by Health Board") %>% 
+     tab_spanner(label = "Rate per 100k",
+              columns = c(total_paid_quantity))
+```
