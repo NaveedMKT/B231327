@@ -112,13 +112,13 @@ final_data <- left_join(joined_data, deprivation_data, by = join_by(hb == hb))
 Possible Code
 ```{r, results = "hide"}
 #Possible pivoting may be required
-weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>%
-  left_join(., geography_data, by = join_by(hscp == hscp)) %>% 
-  filter(str_detect(bnf_item_description, "GLUTIDE|OZEMPIC|SAXENDA|TRULICITY")) %>% 
-  group_by(hscp, hscp_name, bnf_item_description) %>%  
-  summarize(paid_quantity = sum(paid_quantity))
+#weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>%
+  #left_join(., geography_data, by = join_by(hscp == hscp)) %>% 
+  #filter(str_detect(bnf_item_description, "GLUTIDE|OZEMPIC|SAXENDA|TRULICITY")) %>% 
+  #group_by(hscp, hscp_name, bnf_item_description) %>%  
+ # summarize(paid_quantity = sum(paid_quantity))
 
-final_data <- left_join(weightdrug_data, deprivation_data)
+#final_data <- left_join(weightdrug_data, deprivation_data)
 ```
 
 This graph show the distribution of these prescriptions around Scotland.
@@ -156,7 +156,7 @@ ggplot(aes(x = average_simd, y = paid_quantity)) +
 #Possibly use boxplots after making as factor
 
 weightdrug_data %>% 
-  ggplot(aes(y = paid_quantity, x = reorder(hscp_name, paid_quantity))) +
+  ggplot(aes(y = paid_quantity, x = reorder(hb_name, paid_quantity))) +
   geom_col() +
   coord_flip()+
   labs(title = "No. of weight loss drug prescriptions per health board", x = "Health Board Name", y = "Weight Loss Drugs Prescriptions per person")
