@@ -101,7 +101,17 @@ stroke_mortality_data <- read_csv("https://www.opendata.nhs.scot/dataset/f5dcf38
   clean_names() %>% 
   filter(year == 2022) %>% 
   group_by(ca) %>% 
-  summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE))
+  summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE)) %>% 
+  rename(stroke = number_of_deaths)
+
+cardiovascular_mortality_data <- read_csv("https://www.opendata.nhs.scot/dataset/0e17f3fc-9429-48aa-b1ba-2b7e55688253/resource/fc7b42f1-4de6-48dd-b640-613fb0aa427d/download/hd_mortalitybyca.csv") %>% 
+  clean_names() %>% 
+  filter(year == 2022) %>% 
+  group_by(ca) %>% 
+  summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE)) %>% 
+  rename(cardiovascular = number_of_deaths)
+
+mortality_data <- full_join(stroke_mortality_data, cardiovascular_mortality_data)
 ```
 
 ##Joining The Datasets
@@ -119,7 +129,7 @@ weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == pra
   left_join(., deprivation_data, by = join_by(data_zone == data_zone)) %>% 
   #Adds in deprivation index for each health board
   left_join(., population_data) %>% 
-  left_join(., stroke_mortality_data)
+  left_join(., mortality_data)
 
 map_data <- weightdrug_data %>% 
   group_by(hb) %>% 
@@ -140,7 +150,8 @@ str_mortality_plot_data <- weightdrug_data %>%
   group_by(hb, hb_name, ca) %>% # add bnf_item_description
   summarise(paid_quantity = sum(paid_quantity),
             average_simd_per_hb = mean(simd2020v2country_decile),
-            mortality = unique(number_of_deaths))
+            stroke = unique(stroke),
+            cardiovascular = unique(cardiovascular))
 
 missing_data <- dp_plot_data %>% 
   filter(across(everything(), ~is.na(.)))
@@ -221,8 +232,16 @@ summary(deprivation_lm_model)
 
 Graph for prescriptions vs mortality
 ```{r}
-str_mortality_plot_data %>% 
-  ggplot(aes(x = mortality, y = paid_quantity, color = hb_name)) +
+str_mortality_plot_data_long <- str_mortality_plot_data %>%
+  pivot_longer(cols = c(stroke, cardiovascular), 
+               names_to = "category", 
+               values_to = "value") %>% 
+  mutate(category = case_when(category == "stroke" ~ "Stroke Deaths",
+                              category == "cardiovascular" ~ "Cardiovascular Deaths"))
+
+
+str_mortality_plot_data_long %>% 
+  ggplot(aes(x = value, y = paid_quantity, color = hb_name)) +
   geom_point() +
   geom_smooth(method = "lm", color = "red", size = 1) +
   labs(
@@ -231,16 +250,64 @@ str_mortality_plot_data %>%
     x = "Mortality",
     y = "Number of Prescriptions",
     color = "Health Board"  # Add legend title for color
-  )
+  ) +
+  facet_wrap(~category, scales = "free_x")
 
-mortality_lm_model <- lm(paid_quantity ~ mortality, data = str_mortality_plot_data)
-cor.test(str_mortality_plot_data$paid_quantity, str_mortality_plot_data$mortality)
+mortality_lm_model <- lm(paid_quantity ~ stroke+cardiovascular, data = str_mortality_plot_data)
+cor.test(str_mortality_plot_data$paid_quantity, (str_mortality_plot_data$cardiovascular + str_mortality_plot_data$stroke))
 summary(mortality_lm_model)
 ```
 
 GT Table Data
 ```{r}
-  gt_data <- weightdrug_data %>%
+#  gt_data <- weightdrug_data %>%
+#  mutate(drug_category = case_when(
+#    str_detect(bnf_item_description, "METFORMIN") ~ #"Metformin",
+#    str_detect(bnf_item_description, "INSULIN") ~ "Insulin",
+#    str_detect(bnf_item_description, #"OZEMPIC|SAXENDA|TRULICITY|GLUTIDE") ~ "GLP-1 Antagonists",
+#    str_detect(bnf_item_description, "GLICLAZIDE|GLIPIZIDE") #~ "Sulphonylureas",
+#    str_detect(bnf_item_description, "GLIFLOZIN") ~ "SGT2 #Inhibitors",
+#    TRUE ~ "Other"
+#  )) %>%
+#  group_by(hb_name, drug_category) %>%
+#  summarise(total_paid_quantity = sum(paid_quantity, na.rm = #TRUE)/head(hb_population, 1) * 100000,
+#            ar_simd = mean(simd2020v2country_decile, na.rm = #TRUE),
+#            mortality_deaths = mean(number_of_deaths, na.rm = #TRUE)) %>%
+#  arrange(hb_name, drug_category)
+#Use ifelse or casewhen to get a count of each weight loss drug
+
+#  gt_data <- na.omit(gt_data)
+#Remember to find a different way to do this
+#  
+#gt_data %>%  
+#  gt() %>% 
+#     cols_label(
+#      drug_category = "Drug Category", 
+#       total_paid_quantity = "Sum of Prescriptions", 
+#       ar_simd = "Average SIMD",
+#       mortality_deaths = "Number of Cardiovascular Deaths"
+#     ) %>% 
+#     cols_align(
+#       align = "center",
+#       columns = everything()
+#     ) %>% 
+#  summary_rows(columns = c(total_paid_quantity, ar_simd, #mortality_deaths),
+#               fns = list(Average = ~round(mean(., na.rm = #TRUE), 2))) %>% 
+#  grand_summary_rows(columns = c(total_paid_quantity, #ar_simd, mortality_deaths), 
+#                     fns = list("Overall Average" = #~round(mean(., na.rm = TRUE), 2))) %>% 
+#     fmt_number(columns = c(total_paid_quantity, ar_simd, #mortality_deaths), decimals = 2) %>% 
+#     tab_header(title = "Prescriptions of Diabetes Drugs and #Cardiovascular Mortality Rates and How That Compares Across ##Socieconomically Diverse Regions",
+#                subtitle = "Grouped by Health Board") %>% 
+#     tab_spanner(label = "Rate per 100k",
+#              columns = c(total_paid_quantity))
+```
+
+
+
+
+Alternative GT Table
+```{r}
+gt_data <- weightdrug_data %>%
   mutate(drug_category = case_when(
     str_detect(bnf_item_description, "METFORMIN") ~ "Metformin",
     str_detect(bnf_item_description, "INSULIN") ~ "Insulin",
@@ -249,11 +316,16 @@ GT Table Data
     str_detect(bnf_item_description, "GLIFLOZIN") ~ "SGT2 Inhibitors",
     TRUE ~ "Other"
   )) %>%
-  group_by(hb_name, drug_category) %>%
+  group_by(drug_category) %>%
   summarise(total_paid_quantity = sum(paid_quantity, na.rm = TRUE)/head(hb_population, 1) * 100000,
             ar_simd = mean(simd2020v2country_decile, na.rm = TRUE),
-            mortality_deaths = mean(number_of_deaths, na.rm = TRUE)) %>%
-  arrange(hb_name, drug_category)
+            stroke = mean(stroke, na.rm = TRUE),
+            cardiovascular = mean(stroke, na.rm = TRUE)) %>%
+  arrange(drug_category) 
+## hb_name was removed from both the group by and arrange functions
+
+#gt_data <- gt_data %>% 
+#  select(drug_category:mortality_deaths)
 #Use ifelse or casewhen to get a count of each weight loss drug
 
   gt_data <- na.omit(gt_data)
@@ -265,19 +337,22 @@ gt_data %>%
        drug_category = "Drug Category", 
        total_paid_quantity = "Sum of Prescriptions", 
        ar_simd = "Average SIMD",
-       mortality_deaths = "Number of Cardiovascular Deaths"
+       cardiovascular = "Number of Cardiovascular Deaths",
+       stroke = "Number of Stroke Deaths"
      ) %>% 
      cols_align(
        align = "center",
        columns = everything()
      ) %>% 
-  summary_rows(columns = c(total_paid_quantity, ar_simd, mortality_deaths),
-               fns = list(Average = ~round(mean(., na.rm = TRUE), 2))) %>% 
-  grand_summary_rows(columns = c(total_paid_quantity, ar_simd, mortality_deaths), 
-                     fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% 
-     fmt_number(columns = c(total_paid_quantity, ar_simd, mortality_deaths), decimals = 2) %>% 
+ # summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular),
+  #             fns = list(Average = ~round(mean(., na.rm = TRUE), 2))) %>% 
+ # grand_summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), 
+  #                   fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% 
+     fmt_number(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), decimals = 2) %>% 
      tab_header(title = "Prescriptions of Diabetes Drugs and Cardiovascular Mortality Rates and How That Compares Across Socieconomically Diverse Regions",
                 subtitle = "Grouped by Health Board") %>% 
      tab_spanner(label = "Rate per 100k",
               columns = c(total_paid_quantity))
 ```
+```
+
