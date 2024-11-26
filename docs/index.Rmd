@@ -158,11 +158,11 @@ Possible Code
 
 #final_data <- left_join(weightdrug_data, deprivation_data)
 
-plot2_data <- dp_year_data %>% 
-  group_by(hb_name, hb) %>% 
-  summarise(paid_quantity = sum(paid_quantity)) %>% 
-  left_join(., deprivation_data, by = join_by(hb == hb)) %>% 
-  left_join(., NHS_healthboards, by = join_by(hb == HBCode))
+#plot2_data <- dp_year_data %>% 
+#  group_by(hb_name, hb) %>% 
+#  summarise(paid_quantity = sum(paid_quantity)) %>% 
+#  left_join(., deprivation_data, by = join_by(hb == hb)) %>% 
+#  left_join(., NHS_healthboards, by = join_by(hb == HBCode))
 ```
 
 ##Map for distribution of prescriptions across Scotland
