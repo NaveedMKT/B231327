@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE)
 ```
 
 ## Research Question
@@ -33,7 +33,7 @@ library(ggspatial)
 
 This section contains the code for loading in all the required datasets. 
 
-```{r pressure, echo=FALSE, results = "hide", message = FALSE, warnings = FALSE}
+```{r, results = "hide"}
 files <- list.files(here("data", "year_data"), pattern = "csv", full.names = TRUE)
 
 year_data <- files %>%
@@ -77,7 +77,8 @@ population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), 
     clean_names()
 #Loads in the population data per health board
   
-  NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp"))
+  NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp")) %>% 
+    clean_names()
 #Loads in the data for the creation of the map
   
 geography_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b534-d6e17229cc7b/resource/395476ab-0720-4740-be07-ff4467141352/download/dz2011_codes_and_labels_21042020.csv") %>% 
@@ -109,7 +110,7 @@ This section of code joins the various datasets of interest to create the joined
 It then filters based on the relevant requirements.
 First we filter out 
 
-```{r, results = "hide"}
+```{r}
 weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>% 
   #Joins the health board names with the prescriptions dataset
   filter(str_detect(bnf_item_description, "METFORMIN|INSULIN|GLUTIDE|OZEMPIC|SAXENDA|TRULICITY|GLICLAZIDE|GLIPIZIDE|GLIFLOZIN"),
@@ -123,7 +124,7 @@ weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == pra
 map_data <- weightdrug_data %>% 
   group_by(hb) %>% 
   summarise(paid_quantity = sum(paid_quantity)) %>% 
-  left_join(., NHS_healthboards, by = join_by(hb == HBCode)) 
+  left_join(., NHS_healthboards, by = join_by(hb == hb_code)) 
 #Adds in deprivation index for each health board
 
 dp_plot_data <- weightdrug_data %>%
@@ -147,24 +148,6 @@ missing_data <- dp_plot_data %>%
 #FIX MISSING DATA PROBLEM
 ```
 
-Possible Code
-```{r, results = "hide"}
-#Possible pivoting may be required
-#weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>%
-  #left_join(., geography_data, by = join_by(hscp == hscp)) %>% 
-  #filter(str_detect(bnf_item_description, "GLUTIDE|OZEMPIC|SAXENDA|TRULICITY")) %>% 
-  #group_by(hscp, hscp_name, bnf_item_description) %>%  
- # summarize(paid_quantity = sum(paid_quantity))
-
-#final_data <- left_join(weightdrug_data, deprivation_data)
-
-#plot2_data <- dp_year_data %>% 
-#  group_by(hb_name, hb) %>% 
-#  summarise(paid_quantity = sum(paid_quantity)) %>% 
-#  left_join(., deprivation_data, by = join_by(hb == hb)) %>% 
-#  left_join(., NHS_healthboards, by = join_by(hb == HBCode))
-```
-
 ##Map for distribution of prescriptions across Scotland
 This map show the distribution of these prescriptions around Scotland.
 
@@ -184,7 +167,7 @@ ggplot(aes(geometry = geometry, fill = paid_quantity)) +
     ) 
   )+
   # Add health board names as labels
-  geom_sf_text(aes(label = HBName), size = 2, color = "black", fontface = "bold")  # Adjust size and color of the text
+  geom_sf_text(aes(label = hb_name), size = 2, color = "black", fontface = "bold")  # Adjust size and color of the text
 
 # limits = c(0, 10000000), oob = scales::squish
 ```
