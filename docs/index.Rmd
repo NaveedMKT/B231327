@@ -59,13 +59,7 @@ hb_data <- full_join(hb_data, special_hb_data)
 
 deprivation_data <- read_csv("https://www.opendata.nhs.scot/dataset/78d41fa9-1a62-4f7b-9edb-3e8522a93378/resource/acade396-8430-4b34-895a-b3e757fa346e/download/simd2020v2_22062020.csv") %>% 
   select(DataZone:CA, SIMD2020V2CountryDecile, -HB, -CA)%>% #, -HB, -CA
-  clean_names()
-
-#mortality_deprivation_data <- deprivation_data
-#group_by(hb_name) %>% 
-#summarize()
-
-#Loads in the average deprivation index for each health board
+  clean_names() #Loads in the deprivation index for each data zone
 
 population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), skip = 10) %>% 
   rename(Spare = "...6",
@@ -74,26 +68,18 @@ population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), 
   filter(Age == "All people" & Sex == "All people") %>% 
   select(hb_name, hb_population) %>% 
   mutate(hb_name = paste("NHS", hb_name)) %>% 
-    clean_names()
-#Loads in the population data per health board
+    clean_names() #Loads in the population data per health board
   
   NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp")) %>% 
-    clean_names()
-#Loads in the data for the creation of the map
+    clean_names() #Loads in the data for the creation of the map
   
 geography_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b534-d6e17229cc7b/resource/395476ab-0720-4740-be07-ff4467141352/download/dz2011_codes_and_labels_21042020.csv") %>% 
   select(DataZone, DataZoneName, CA) %>% 
-  clean_names()
-#Loads in the names for the datazone
+  clean_names() #Loads in the names for the datazone
 
 gp_data <- read_csv("https://www.opendata.nhs.scot/dataset/f23655c3-6e23-4103-a511-a80d998adb90/resource/64b42f68-3353-449b-bc1c-0f733b21803b/download/practice_contactdetails_oct2024-open-data.csv") %>% 
-  clean_names() %>% 
-#Loads in the data for each GP and includes the population as well
+  clean_names() %>% #Loads in the data for each GP so as to connect the prescriptions and datazone
   select(practice_code, data_zone)
-
-#%>%
-#  summarise(across(c(DataZone, all_ages), ~head(., 1)))
-#Prevents the creation of multiple observations
 
 gp_data <- left_join(gp_data, geography_data, by = join_by(data_zone == data_zone)) 
   
@@ -102,19 +88,19 @@ stroke_mortality_data <- read_csv("https://www.opendata.nhs.scot/dataset/f5dcf38
   filter(year == 2022) %>% 
   group_by(ca) %>% 
   summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE)) %>% 
-  rename(stroke = number_of_deaths)
+  rename(stroke = number_of_deaths) #Loads in stroke deaths per council area
 
 cardiovascular_mortality_data <- read_csv("https://www.opendata.nhs.scot/dataset/0e17f3fc-9429-48aa-b1ba-2b7e55688253/resource/fc7b42f1-4de6-48dd-b640-613fb0aa427d/download/hd_mortalitybyca.csv") %>% 
   clean_names() %>% 
   filter(year == 2022) %>% 
   group_by(ca) %>% 
   summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE)) %>% 
-  rename(cardiovascular = number_of_deaths)
+  rename(cardiovascular = number_of_deaths) #Loads in cardiovascular deaths per council area
 
-mortality_data <- full_join(stroke_mortality_data, cardiovascular_mortality_data)
+mortality_data <- full_join(stroke_mortality_data, cardiovascular_mortality_data) #Combines the mortality datasets
 ```
 
-##Joining The Datasets
+## Joining The Datasets
 
 This section of code joins the various datasets of interest to create the joined data.
 It then filters based on the relevant requirements.
@@ -124,27 +110,25 @@ First we filter out
 weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>% 
   #Joins the health board names with the prescriptions dataset
   filter(str_detect(bnf_item_description, "METFORMIN|INSULIN|GLUTIDE|OZEMPIC|SAXENDA|TRULICITY|GLICLAZIDE|GLIPIZIDE|GLIFLOZIN"),
-         is.na(data_zone) != TRUE) %>%   #Filters for the GLP-1 antagonists and summarizes paid quantity
-  left_join(., hb_data, by = join_by(hb == hb)) %>% 
+         is.na(data_zone) != TRUE) %>%   #Filters for relevant diabetes medications and removes missing data
+  left_join(., hb_data, by = join_by(hb == hb)) %>%  
   left_join(., deprivation_data, by = join_by(data_zone == data_zone)) %>% 
   #Adds in deprivation index for each health board
-  left_join(., population_data) %>% 
-  left_join(., mortality_data)
+  left_join(., population_data) %>%  #Adds in population data per health board
+  left_join(., mortality_data) #Adds in stroke and cardiovascular mortality data
 
 map_data <- weightdrug_data %>% 
   group_by(hb) %>% 
-  summarise(paid_quantity = sum(paid_quantity)) %>% 
+  summarise(paid_quantity = sum(paid_quantity)) %>% #Sum of prescriptions per health board
   left_join(., NHS_healthboards, by = join_by(hb == hb_code)) 
-#Adds in deprivation index for each health board
+#Adds in information to plot the map for prescriptions for each health board
 
 dp_plot_data <- weightdrug_data %>%
   group_by(data_zone, gp_practice, hb, hb_name) %>% 
   summarise(paid_quantity = sum(paid_quantity),
             simd = unique(simd2020v2country_decile))
-  #Joins in population data and geography data for the map
+  #Creates data for the deprivation plot with data from each gp practice grouped by health board
 
-### THE ONLY PART THAT NEEDS CHANGING IN THIS SECTION
-### REMEMBER TO EDIT THE SIMD AS YOU DO NOT NEED TO GROUP BY DATA ZONE
 str_mortality_plot_data <- weightdrug_data %>% 
   left_join(., population_data) %>%
   group_by(hb, hb_name, ca) %>% # add bnf_item_description
@@ -152,14 +136,13 @@ str_mortality_plot_data <- weightdrug_data %>%
             average_simd_per_hb = mean(simd2020v2country_decile),
             stroke = unique(stroke),
             cardiovascular = unique(cardiovascular))
+#Creates data for the mortality plot data with data from each council area grouped by health board
 
 missing_data <- dp_plot_data %>% 
   filter(across(everything(), ~is.na(.)))
-
-#FIX MISSING DATA PROBLEM
 ```
 
-##Map for distribution of prescriptions across Scotland
+## Map for distribution of prescriptions across Scotland
 This map show the distribution of these prescriptions around Scotland.
 
 ```{r}
@@ -175,54 +158,33 @@ ggplot(aes(geometry = geometry, fill = paid_quantity)) +
     style = north_arrow_nautical(
       fill = c("blue", "white"),      
       line_col = "grey20"
-    ) 
-  )+
-  # Add health board names as labels
-  geom_sf_text(aes(label = hb_name), size = 2, color = "black", fontface = "bold")  # Adjust size and color of the text
-
-# limits = c(0, 10000000), oob = scales::squish
+    ) #Adds in the North Arrow
+  ) +
+  geom_sf_text(aes(label = hb_name), size = 2, color = "black", fontface = "bold")  #Adds in labels for each health board
 ```
 
-##Graph for prescriptions vs SIMD
+## Graph for prescriptions vs SIMD
 
 ```{r}
-#plot_data %>% 
-#ggplot(aes(x = average_simd, y = paid_quantity)) +
-#  geom_point() +
-#  geom_smooth(method = "lm") +
-#  theme(axis.text.x = element_text( 
-#   angle = 90,
-#   size=7, 
-#   face=3)) +
-#  labs(title = "Prescriptions vs SIMD", y = "Prescriptions", x = "SIMD")
-
 dp_plot_data %>% 
   ggplot(aes(x = simd, y = paid_quantity, color = hb_name)) +  # Map color to health board
-  geom_point(angle = 90,
-    face=3,
+  geom_point(
     size = 2,        # Size of points
     alpha = 0.7      # Transparency of points
   ) +
   geom_smooth(method = "lm", color = "red", size = 1) +  # Add regression line with a different color
   theme_bw() +  # Minimal theme for a cleaner look
-  theme(
-    axis.text.x = element_text(
-      size = 10,   # Adjust size of x-axis text
-      hjust = 1     # Horizontal alignment of x-axis text
-    ),
-    axis.text.y = element_text(size = 10),  # Adjust size of y-axis text
-    axis.title = element_text(size = 12),   # Increase axis title font size
-    plot.title = element_text(size = 14, face = "bold"),  # Increase title size and make it bold
-    plot.subtitle = element_text(size = 10),  # Subtitle size
-    panel.grid.major = element_line(color = "grey90", size = 0.5),  # Lighter grid lines
-  ) +
-  labs(
-    title = "Prescriptions of Diabetes Drugs vs average SIMD",
-    subtitle = "Relationship between the average SIMD decile and the number of prescriptions of diabetes drugs",
-    x = "SIMD",
-    y = "Number of Prescriptions",
-    color = "Health Board"  # Add legend title for color
-  ) +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),  # Adjust size of y-axis text
+        axis.title = element_text(size = 12),   # Increase axis title font size
+        plot.title = element_text(size = 14, face = "bold"),  # Increase title size and make it bold
+        plot.subtitle = element_text(size = 10),  # Subtitle size
+        panel.grid.major = element_line(color = "grey90", size = 0.5)) +
+  labs(title = "Prescriptions of Diabetes Drugs vs average SIMD",
+       subtitle = "Relationship between the average SIMD decile and the number of prescriptions of diabetes drugs",
+       x = "SIMD",
+       y = "Number of Prescriptions",
+       color = "Health Board") +
   scale_x_continuous(limits = c(1, 10), breaks = seq(1, 10, by = 1))
 
 deprivation_lm_model <- lm(paid_quantity ~ simd, data = dp_plot_data)
@@ -230,7 +192,7 @@ cor.test(dp_plot_data$paid_quantity, dp_plot_data$simd)
 summary(deprivation_lm_model)
 ```
 
-Graph for prescriptions vs mortality
+## Graph for prescriptions vs mortality
 ```{r}
 str_mortality_plot_data_long <- str_mortality_plot_data %>%
   pivot_longer(cols = c(stroke, cardiovascular), 
@@ -251,61 +213,14 @@ str_mortality_plot_data_long %>%
     y = "Number of Prescriptions",
     color = "Health Board"  # Add legend title for color
   ) +
-  facet_wrap(~category, scales = "free_x")
+  facet_wrap(~category, scales = "free_x") #Creates two plots one for cardiovascular mortality and stroke mortality
 
 mortality_lm_model <- lm(paid_quantity ~ stroke+cardiovascular, data = str_mortality_plot_data)
 cor.test(str_mortality_plot_data$paid_quantity, (str_mortality_plot_data$cardiovascular + str_mortality_plot_data$stroke))
 summary(mortality_lm_model)
 ```
 
-GT Table Data
-```{r}
-#  gt_data <- weightdrug_data %>%
-#  mutate(drug_category = case_when(
-#    str_detect(bnf_item_description, "METFORMIN") ~ #"Metformin",
-#    str_detect(bnf_item_description, "INSULIN") ~ "Insulin",
-#    str_detect(bnf_item_description, #"OZEMPIC|SAXENDA|TRULICITY|GLUTIDE") ~ "GLP-1 Antagonists",
-#    str_detect(bnf_item_description, "GLICLAZIDE|GLIPIZIDE") #~ "Sulphonylureas",
-#    str_detect(bnf_item_description, "GLIFLOZIN") ~ "SGT2 #Inhibitors",
-#    TRUE ~ "Other"
-#  )) %>%
-#  group_by(hb_name, drug_category) %>%
-#  summarise(total_paid_quantity = sum(paid_quantity, na.rm = #TRUE)/head(hb_population, 1) * 100000,
-#            ar_simd = mean(simd2020v2country_decile, na.rm = #TRUE),
-#            mortality_deaths = mean(number_of_deaths, na.rm = #TRUE)) %>%
-#  arrange(hb_name, drug_category)
-#Use ifelse or casewhen to get a count of each weight loss drug
-
-#  gt_data <- na.omit(gt_data)
-#Remember to find a different way to do this
-#  
-#gt_data %>%  
-#  gt() %>% 
-#     cols_label(
-#      drug_category = "Drug Category", 
-#       total_paid_quantity = "Sum of Prescriptions", 
-#       ar_simd = "Average SIMD",
-#       mortality_deaths = "Number of Cardiovascular Deaths"
-#     ) %>% 
-#     cols_align(
-#       align = "center",
-#       columns = everything()
-#     ) %>% 
-#  summary_rows(columns = c(total_paid_quantity, ar_simd, #mortality_deaths),
-#               fns = list(Average = ~round(mean(., na.rm = #TRUE), 2))) %>% 
-#  grand_summary_rows(columns = c(total_paid_quantity, #ar_simd, mortality_deaths), 
-#                     fns = list("Overall Average" = #~round(mean(., na.rm = TRUE), 2))) %>% 
-#     fmt_number(columns = c(total_paid_quantity, ar_simd, #mortality_deaths), decimals = 2) %>% 
-#     tab_header(title = "Prescriptions of Diabetes Drugs and #Cardiovascular Mortality Rates and How That Compares Across ##Socieconomically Diverse Regions",
-#                subtitle = "Grouped by Health Board") %>% 
-#     tab_spanner(label = "Rate per 100k",
-#              columns = c(total_paid_quantity))
-```
-
-
-
-
-Alternative GT Table
+## GT Table
 ```{r}
 gt_data <- weightdrug_data %>%
   mutate(drug_category = case_when(
@@ -316,43 +231,32 @@ gt_data <- weightdrug_data %>%
     str_detect(bnf_item_description, "GLIFLOZIN") ~ "SGT2 Inhibitors",
     TRUE ~ "Other"
   )) %>%
-  group_by(drug_category) %>%
+  group_by(hb_name) %>%
   summarise(total_paid_quantity = sum(paid_quantity, na.rm = TRUE)/head(hb_population, 1) * 100000,
             ar_simd = mean(simd2020v2country_decile, na.rm = TRUE),
-            stroke = mean(stroke, na.rm = TRUE),
-            cardiovascular = mean(stroke, na.rm = TRUE)) %>%
-  arrange(drug_category) 
-## hb_name was removed from both the group by and arrange functions
+            stroke = mean(stroke, na.rm = TRUE)/head(hb_population, 1) * 100000,
+            cardiovascular = mean(cardiovascular, na.rm = TRUE)/head(hb_population, 1) * 100000,
+            drug_category = drug_category [which.max(total_paid_quantity)])
 
-#gt_data <- gt_data %>% 
-#  select(drug_category:mortality_deaths)
-#Use ifelse or casewhen to get a count of each weight loss drug
-
-  gt_data <- na.omit(gt_data)
-#Remember to find a different way to do this
-  
 gt_data %>%  
   gt() %>% 
      cols_label(
-       drug_category = "Drug Category", 
+       drug_category = "Most Prescribed Type of Diabetes Drug", 
        total_paid_quantity = "Sum of Prescriptions", 
        ar_simd = "Average SIMD",
        cardiovascular = "Number of Cardiovascular Deaths",
-       stroke = "Number of Stroke Deaths"
+       stroke = "Number of Stroke Deaths",
+       hb_name = "Health Board Name"
      ) %>% 
      cols_align(
        align = "center",
        columns = everything()
      ) %>% 
- # summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular),
-  #             fns = list(Average = ~round(mean(., na.rm = TRUE), 2))) %>% 
- # grand_summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), 
-  #                   fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% 
+ grand_summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% 
      fmt_number(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), decimals = 2) %>% 
      tab_header(title = "Prescriptions of Diabetes Drugs and Cardiovascular Mortality Rates and How That Compares Across Socieconomically Diverse Regions",
                 subtitle = "Grouped by Health Board") %>% 
      tab_spanner(label = "Rate per 100k",
-              columns = c(total_paid_quantity))
-```
+              columns = c(total_paid_quantity, stroke, cardiovascular))
 ```
 
