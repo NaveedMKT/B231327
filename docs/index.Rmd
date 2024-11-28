@@ -2,7 +2,11 @@
 title: "Assessment"
 author: "Naveed"
 date: "2024-11-01"
-output: html_document
+output: 
+  html_document:
+  theme: united
+  toc: true
+  toc_float: true
 ---
 
 ```{r setup, include=FALSE}
@@ -223,25 +227,17 @@ summary(mortality_lm_model)
 ## GT Table
 ```{r}
 gt_data <- weightdrug_data %>%
-  mutate(drug_category = case_when(
-    str_detect(bnf_item_description, "METFORMIN") ~ "Metformin",
-    str_detect(bnf_item_description, "INSULIN") ~ "Insulin",
-    str_detect(bnf_item_description, "OZEMPIC|SAXENDA|TRULICITY|GLUTIDE") ~ "GLP-1 Antagonists",
-    str_detect(bnf_item_description, "GLICLAZIDE|GLIPIZIDE") ~ "Sulphonylureas",
-    str_detect(bnf_item_description, "GLIFLOZIN") ~ "SGT2 Inhibitors",
-    TRUE ~ "Other"
-  )) %>%
   group_by(hb_name) %>%
   summarise(total_paid_quantity = sum(paid_quantity, na.rm = TRUE)/head(hb_population, 1) * 100000,
             ar_simd = mean(simd2020v2country_decile, na.rm = TRUE),
             stroke = mean(stroke, na.rm = TRUE)/head(hb_population, 1) * 100000,
-            cardiovascular = mean(cardiovascular, na.rm = TRUE)/head(hb_population, 1) * 100000,
-            drug_category = drug_category [which.max(total_paid_quantity)])
+            cardiovascular = mean(cardiovascular, na.rm = TRUE)/head(hb_population, 1) * 100000)
 
+#,
+#            drug_category = drug_category [which.max(total_paid_quantity)]
 gt_data %>%  
   gt() %>% 
      cols_label(
-       drug_category = "Most Prescribed Type of Diabetes Drug", 
        total_paid_quantity = "Sum of Prescriptions", 
        ar_simd = "Average SIMD",
        cardiovascular = "Number of Cardiovascular Deaths",
