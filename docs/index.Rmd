@@ -4,7 +4,7 @@ author: "Naveed"
 date: "2024-11-01"
 output: 
   html_document:
-  theme: united
+  theme: superhero
   toc: true
   toc_float: true
 ---
@@ -238,7 +238,7 @@ gt_data <- weightdrug_data %>%
 gt_data %>%  
   gt() %>% 
      cols_label(
-       total_paid_quantity = "Sum of Prescriptions", 
+       total_paid_quantity = "Number of Prescriptions", 
        ar_simd = "Average SIMD",
        cardiovascular = "Number of Cardiovascular Deaths",
        stroke = "Number of Stroke Deaths",
