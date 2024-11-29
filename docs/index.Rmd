@@ -1,27 +1,31 @@
 ---
-title: "Assessment"
+title: "The Relationship Between Deprivation, Cardiovascular and Stroke Mortality and Diabetes Medications"
 author: "Naveed"
 date: "2024-11-01"
 output: 
   html_document:
-  theme: superhero
-  toc: true
-  toc_float: true
+    theme: cosmo
+    toc: true
+    toc_float: true
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE)
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE,  
+  fig.width = 7, 
+  fig.height = 5,
+  fig.align = "center", 
+  out.width = "80%")
 ```
 
-## Research Question
-
-How does the prescription of diabetes medications (specifically metformin, insulin, sulphonylureases, GLP-1 antagonists and SGLT2 inhibitors) vary across socioeconomically diverse regions in Scotland and what relationship does it have with cardiovascular and stroke mortality in 2022?
+# Research Question
+How does the prescription of diabetes medications (specifically metformin, insulin, sulphonylureases, GLP-1 antagonists and SGLT2 inhibitors) vary across socioeconomically diverse regions in Scotland and what relationship does it have with cardiovascular and stroke mortality in 2020?
 
 ## Introduction
-Diabetes plays an important role in cardiovascular health with it being a major risk factor for a variety of cardiovascular diseases (NHS, 2022). Diabetes drug prescriptions can be influenced by a variety of factors such as deprivation. 
+Diabetes plays an important role in cardiovascular health  with it being a major risk factor for a variety of cardiovascular diseases (NHS, 2022a). Diabetes prevalance and subsequently diabetes drug prescriptions can be influenced by a variety of factors with a significant one being deprivation. Cardiovascular and stroke pathology can often be complicated and exacerbated by the presence of diabetes.
+
+With these factors all being intrinsically involved, this project conducts an exploratory analysis into the the relationship between deprivation, cardiovascular and stroke mortality and diabetes medications. The time scale chosen for this report is the year 2020 as the earliest data from the SIMD data is from 2020. Firstly, this report investigates the relationship between diabetes medications and deprivation scores taken from the Scottish Index of Multiple Deprivation (SIMD). The relationship between Scottish cardiovascular and stroke mortality and the diabetes medication prescriptions is then examined individually through the use of plots. Finally, the entirety of the data is summarized in a table at the end of this report to help provide a comprehensive overview of the key findings.
 
 ## The Libraries
-
 This section contains the code for loading in all the required libraries. 
 
 ```{r}
@@ -34,8 +38,10 @@ library(ggspatial)
 ```
 
 ## The Data
+This section contains the code for loading in all the required datasets that will be explored. 
 
-This section contains the code for loading in all the required datasets. 
+### Main Data
+This chunk of code runs loads in the Prescriptions in Community dataset along with the "Health Board 2006" data from the Scotland open data website to be joined in with the main prescriptions data.
 
 ```{r, results = "hide"}
 files <- list.files(here("data", "year_data"), pattern = "csv", full.names = TRUE)
@@ -52,15 +58,12 @@ hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b5
   clean_names() %>% 
   select(hb, hb_name)
 #Loads in the data for healthboard names
+```
 
-special_hb_data <- read_csv("https://www.opendata.nhs.scot/dataset/65402d20-f0f1-4cee-a4f9-a960ca560444/resource/0450a5a2-f600-4569-a9ae-5d6317141899/download/special-health-boards_19022021.csv") %>% 
-  clean_names() %>% 
-  rename(hb_name = shb_name,
-         hb = shb) %>% 
-  select(-country)
-#Loads in data for special healthboards
-hb_data <- full_join(hb_data, special_hb_data)
+### Deprivation, Population and Map Data
+This chunk of code loads in "SIMD 2020v2" data from the open data website that contains the deprivation index for each data zone. It also loads in the population data from the Scotland census so as to create the rate per 100k in the table.
 
+```{r, results = "hide"}
 deprivation_data <- read_csv("https://www.opendata.nhs.scot/dataset/78d41fa9-1a62-4f7b-9edb-3e8522a93378/resource/acade396-8430-4b34-895a-b3e757fa346e/download/simd2020v2_22062020.csv") %>% 
   select(DataZone:CA, SIMD2020V2CountryDecile, -HB, -CA)%>% #, -HB, -CA
   clean_names() #Loads in the deprivation index for each data zone
@@ -73,30 +76,37 @@ population_data <- read_csv(here( "data", "UV103_age_health_board_census.csv"), 
   select(hb_name, hb_population) %>% 
   mutate(hb_name = paste("NHS", hb_name)) %>% 
     clean_names() #Loads in the population data per health board
-  
-  NHS_healthboards <- st_read(here("data", "NHS_healthboards_2019.shp")) %>% 
-    clean_names() #Loads in the data for the creation of the map
-  
+```
+
+### GP and Geography Data
+The geography dataset helps provide the datazone names as well as the council area code for each GP from the "Data Zone 2011" from the "Geography Codes and Labels" . The GP dataset from the "GP Practices and List sizes October 2020" links the practice code to the datazone which can be found from and is later merged with the geography dataset. Both can be found on the open data website.
+
+```{r, results = "hide"}
 geography_data <- read_csv("https://www.opendata.nhs.scot/dataset/9f942fdb-e59e-44f5-b534-d6e17229cc7b/resource/395476ab-0720-4740-be07-ff4467141352/download/dz2011_codes_and_labels_21042020.csv") %>% 
   select(DataZone, DataZoneName, CA) %>% 
   clean_names() #Loads in the names for the datazone
 
-gp_data <- read_csv("https://www.opendata.nhs.scot/dataset/f23655c3-6e23-4103-a511-a80d998adb90/resource/64b42f68-3353-449b-bc1c-0f733b21803b/download/practice_contactdetails_oct2024-open-data.csv") %>% 
-  clean_names() %>% #Loads in the data for each GP so as to connect the prescriptions and datazone
-  select(practice_code, data_zone)
+gp_data <- read_csv("https://www.opendata.nhs.scot/dataset/f23655c3-6e23-4103-a511-a80d998adb90/resource/3a3bc00b-9780-4b97-8120-2d5da5c8a619/download/practice_contactdetails_jul2020-open-data.csv") %>% 
+  clean_names() %>% 
+  select(practice_code, data_zone) #Loads in the data for each GP so as to connect the prescriptions and datazone
 
-gp_data <- left_join(gp_data, geography_data, by = join_by(data_zone == data_zone)) 
-  
+gp_data <- left_join(gp_data, geography_data, by = join_by(data_zone == data_zone)) #Joins council area and datazone data along with gp practice code
+```
+
+### Mortality Data
+This chunk of code loads in the "Scottish Stroke Statistics" and "Scottish Heart Disease Statistics" data from the open data website to explore the relationship between diabetes prescriptions and stroke and cardiovascular mortality.
+
+```{r, results = "hide"}
 stroke_mortality_data <- read_csv("https://www.opendata.nhs.scot/dataset/f5dcf382-e6ca-49f6-b807-4f9cc29555bc/resource/285b4cbd-1e87-49fe-9e24-73d2da8166ae/download/stroke_mortalitybyca.csv") %>% 
   clean_names() %>% 
-  filter(year == 2022) %>% 
+  filter(year == 2020) %>% 
   group_by(ca) %>% 
   summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE)) %>% 
   rename(stroke = number_of_deaths) #Loads in stroke deaths per council area
 
 cardiovascular_mortality_data <- read_csv("https://www.opendata.nhs.scot/dataset/0e17f3fc-9429-48aa-b1ba-2b7e55688253/resource/fc7b42f1-4de6-48dd-b640-613fb0aa427d/download/hd_mortalitybyca.csv") %>% 
   clean_names() %>% 
-  filter(year == 2022) %>% 
+  filter(year == 2020) %>% 
   group_by(ca) %>% 
   summarise(number_of_deaths = sum(number_of_deaths, na.rm = TRUE)) %>% 
   rename(cardiovascular = number_of_deaths) #Loads in cardiovascular deaths per council area
@@ -105,136 +115,124 @@ mortality_data <- full_join(stroke_mortality_data, cardiovascular_mortality_data
 ```
 
 ## Joining The Datasets
-
 This section of code joins the various datasets of interest to create the joined data.
-It then filters based on the relevant requirements.
-First we filter out 
+
+### Main Data
+First, weightdrug_data dataframe is created by joining the prescription data with the gp data which adds in the datazones and council area codes. Then it gets filtered for the specific drugs of interest (specifically metformin, insulin, sulphonylureases, GLP-1 antagonists and SGLT2 inhibitors). After which, the health board, deprivation, population and mortality data gets added.
 
 ```{r}
 weightdrug_data <- left_join(year_data, gp_data, by = join_by(gp_practice == practice_code)) %>% 
-  #Joins the health board names with the prescriptions dataset
+  #Adds in datazone and council area codes
   filter(str_detect(bnf_item_description, "METFORMIN|INSULIN|GLUTIDE|OZEMPIC|SAXENDA|TRULICITY|GLICLAZIDE|GLIPIZIDE|GLIFLOZIN"),
          is.na(data_zone) != TRUE) %>%   #Filters for relevant diabetes medications and removes missing data
-  left_join(., hb_data, by = join_by(hb == hb)) %>%  
+  left_join(., hb_data, by = join_by(hb == hb)) %>% #Joins the health board names with the prescriptions dataset
   left_join(., deprivation_data, by = join_by(data_zone == data_zone)) %>% 
   #Adds in deprivation index for each health board
   left_join(., population_data) %>%  #Adds in population data per health board
   left_join(., mortality_data) #Adds in stroke and cardiovascular mortality data
+```
 
-map_data <- weightdrug_data %>% 
-  group_by(hb) %>% 
-  summarise(paid_quantity = sum(paid_quantity)) %>% #Sum of prescriptions per health board
-  left_join(., NHS_healthboards, by = join_by(hb == hb_code)) 
-#Adds in information to plot the map for prescriptions for each health board
+### Deprivation Plot Data
+The dp_plot_data dataframe is created and is grouped by health board code and name. It is also grouped by the gp practice and data zone code so as to have increased specificity in the deprivation index for each data point.
 
+```{r}
 dp_plot_data <- weightdrug_data %>%
   group_by(data_zone, gp_practice, hb, hb_name) %>% 
   summarise(paid_quantity = sum(paid_quantity),
             simd = unique(simd2020v2country_decile))
   #Creates data for the deprivation plot with data from each gp practice grouped by health board
+```
 
-str_mortality_plot_data <- weightdrug_data %>% 
-  left_join(., population_data) %>%
+### Mortality Plot Data
+The str_mortality_plot_data dataframe is created and is grouped by health board code and name. It is also grouped by the council area code so as to have increased specificity in the number of deaths for each data point. Sum of prescriptions, average deprivation index and stroke and cardiovascular deaths is calculated.
+
+```{r}
+mortality_plot_data <- weightdrug_data %>%
   group_by(hb, hb_name, ca) %>% # add bnf_item_description
   summarise(paid_quantity = sum(paid_quantity),
             average_simd_per_hb = mean(simd2020v2country_decile),
             stroke = unique(stroke),
             cardiovascular = unique(cardiovascular))
 #Creates data for the mortality plot data with data from each council area grouped by health board
-
-missing_data <- dp_plot_data %>% 
-  filter(across(everything(), ~is.na(.)))
 ```
 
-## Map for distribution of prescriptions across Scotland
-This map show the distribution of these prescriptions around Scotland.
+### GT Table Data
+The gt_data dataframe is created and is grouped by health board code and name. The rates per 100k is created for the diabetes medication prescriptions and stroke and cardiovascular deaths.
 
 ```{r}
-map_data %>%
-ggplot(aes(geometry = geometry, fill = paid_quantity)) +
-  geom_sf() +
-  scale_fill_distiller(palette = "RdYlBu") +
-  labs(title = "Number of Diabetes Drug Prescriptions", subtitle = "In Scotland", fill = "Total No. of Prescriptions") +  
-  annotation_scale(location = "tl") +
-  annotation_north_arrow(
-    location = "tl",    
-    pad_y = unit(0.5, "in"),    
-    style = north_arrow_nautical(
-      fill = c("blue", "white"),      
-      line_col = "grey20"
-    ) #Adds in the North Arrow
-  ) +
-  geom_sf_text(aes(label = hb_name), size = 2, color = "black", fontface = "bold")  #Adds in labels for each health board
+mortality_data <- mortality_plot_data %>% 
+  group_by(hb_name) %>% 
+  summarise(stroke = sum(stroke, na.rm = TRUE),
+            cardiovascular = sum(cardiovascular, na.rm = TRUE)) #Calculates the number of deaths per health board
+
+gt_data <- weightdrug_data %>%
+  group_by(hb_name) %>%
+  summarise(total_paid_quantity = sum(paid_quantity, na.rm = TRUE)/head(hb_population, 1) * 100000,
+            hb_population = unique(hb_population),
+            ar_simd = mean(simd2020v2country_decile, na.rm = TRUE)) %>% 
+  left_join(., mortality_data) %>% 
+  mutate(cardiovascular = cardiovascular/hb_population * 100000,
+         stroke = stroke/hb_population * 100000) %>% 
+  select(-hb_population)
+#Creates the rate per 100k and the SIMD average for each health board
 ```
 
-## Graph for prescriptions vs SIMD
+## Exploratory Analysis
+The next section runs through the exploratory analysis conducted to explore the relationship between deprivation, cardiovascular and stroke mortality and diabetes medications. Linear models were run simultaneously with the graphs as they can be run with multiple types of data (Castro and Aliakbar Akbaritabar, 2024). 
+
+### Graph for prescriptions vs SIMD
+SIMD decile is a score between 1-10 with 1 being most deprived and 10 being least deprived. The graph subsequently created compares the prescription of diabetes drugs vs average SIMD.
 
 ```{r}
 dp_plot_data %>% 
   ggplot(aes(x = simd, y = paid_quantity, color = hb_name)) +  # Map color to health board
-  geom_point(
-    size = 2,        # Size of points
-    alpha = 0.7      # Transparency of points
-  ) +
-  geom_smooth(method = "lm", color = "red", size = 1) +  # Add regression line with a different color
-  theme_bw() +  # Minimal theme for a cleaner look
-  theme(axis.text.x = element_text(size = 10),
-        axis.text.y = element_text(size = 10),  # Adjust size of y-axis text
-        axis.title = element_text(size = 12),   # Increase axis title font size
-        plot.title = element_text(size = 14, face = "bold"),  # Increase title size and make it bold
-        plot.subtitle = element_text(size = 10),  # Subtitle size
-        panel.grid.major = element_line(color = "grey90", size = 0.5)) +
-  labs(title = "Prescriptions of Diabetes Drugs vs average SIMD",
-       subtitle = "Relationship between the average SIMD decile and the number of prescriptions of diabetes drugs",
-       x = "SIMD",
-       y = "Number of Prescriptions",
-       color = "Health Board") +
+  geom_point(size = 2,        
+    alpha = 0.7) + #Adjusts the features of the points
+  geom_smooth(method = "lm", color = "red", size = 1) +  # Adds a regression line of color red
+  theme_bw() +  # Adds in a special theme
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 10), 
+        axis.title = element_text(size = 12), 
+        plot.title = element_text(size = 14, face = "bold"), 
+        plot.subtitle = element_text(size = 10),
+        panel.grid.major = element_line(color = "grey90", size = 0.5)) + #Adds in element parameters
+  labs(title = "Prescriptions of Diabetes Drugs vs average SIMD", subtitle = "Relationship between the average SIMD decile and the number of prescriptions of diabetes drugs", x = "SIMD", y = "Number of Prescriptions", color = "Health Board") + #Adds the descriptors for the graphs
   scale_x_continuous(limits = c(1, 10), breaks = seq(1, 10, by = 1))
 
 deprivation_lm_model <- lm(paid_quantity ~ simd, data = dp_plot_data)
-cor.test(dp_plot_data$paid_quantity, dp_plot_data$simd)
-summary(deprivation_lm_model)
+summary(deprivation_lm_model) #Generates a summary of a linear model
 ```
+We can see from this graph that there is clear relationship between diabetes drugs and SIMD where we can see as the deprivation index increases (deprivation decreases), the number of prescriptions increases. The linear model elucidates this relationship more. The p-value is 1.202e-06 showing us that the relationship is statistically significant and with each increase in SIMD (less deprivation) by 1 decile, we can see that this leads to a decrease of 8082 prescriptions. The R squared value is 2.51% which means that it does not explain much of the variance but the relationship is still statistically significant.    
 
-## Graph for prescriptions vs mortality
+### Graph for prescriptions vs mortality
+This graph was faceted by the x variable to create a plot for both stroke and cardiovascular mortality.
+
 ```{r}
-str_mortality_plot_data_long <- str_mortality_plot_data %>%
+mortality_plot_data_long <- mortality_plot_data %>%
   pivot_longer(cols = c(stroke, cardiovascular), 
                names_to = "category", 
-               values_to = "value") %>% 
+               values_to = "value") %>% #Pivots the data to help create the graph
   mutate(category = case_when(category == "stroke" ~ "Stroke Deaths",
-                              category == "cardiovascular" ~ "Cardiovascular Deaths"))
+                              category == "cardiovascular" ~ "Cardiovascular Deaths")) #Changes the name for better readability on the graph
 
-
-str_mortality_plot_data_long %>% 
+mortality_plot_data_long %>% 
   ggplot(aes(x = value, y = paid_quantity, color = hb_name)) +
   geom_point() +
   geom_smooth(method = "lm", color = "red", size = 1) +
-  labs(
-    title = "Prescriptions of Diabetes Drugs vs Mortality Deaths",
-    subtitle = "Relationship between the mortality deaths and the number of prescriptions of diabetes drugs",
-    x = "Mortality",
-    y = "Number of Prescriptions",
-    color = "Health Board"  # Add legend title for color
-  ) +
-  facet_wrap(~category, scales = "free_x") #Creates two plots one for cardiovascular mortality and stroke mortality
+  labs(title = "Prescriptions of Diabetes Drugs vs Mortality", subtitle = "Relationship between the mortality and the number of prescriptions of diabetes drugs", x = "Mortality", y = "Number of Prescriptions", color = "Health Board") + #Adds in the descriptions for the plot
+facet_wrap(~category, scales = "free_x") #Creates two plots one for cardiovascular mortality and stroke mortality
 
-mortality_lm_model <- lm(paid_quantity ~ stroke+cardiovascular, data = str_mortality_plot_data)
-cor.test(str_mortality_plot_data$paid_quantity, (str_mortality_plot_data$cardiovascular + str_mortality_plot_data$stroke))
-summary(mortality_lm_model)
+mortality_lm_model <- lm(stroke+cardiovascular ~ paid_quantity, data = mortality_plot_data)
+summary(mortality_lm_model) #Generates a summary of a linear model
 ```
 
-## GT Table
-```{r}
-gt_data <- weightdrug_data %>%
-  group_by(hb_name) %>%
-  summarise(total_paid_quantity = sum(paid_quantity, na.rm = TRUE)/head(hb_population, 1) * 100000,
-            ar_simd = mean(simd2020v2country_decile, na.rm = TRUE),
-            stroke = mean(stroke, na.rm = TRUE)/head(hb_population, 1) * 100000,
-            cardiovascular = mean(cardiovascular, na.rm = TRUE)/head(hb_population, 1) * 100000)
+We can see from this graph that there is clear relationship between diabetes drugs and cardiovascular and stroke mortality where we can see as the number of prescriptions increase, the number of stroke and cardiovascular deaths increase. The linear model elucidates this relationship more. The p-value is 2.2e-16 showing us that the relationship is statistically significant and with an increase of 1,000,000 prescriptions, we can see that this leads to an increase of 142.4 deaths. The R squared value is 94.15% which means that the model is a good fit and diabetes medication is a good predictor of cardiovascular and stroke mortality. This shows how important of a risk factor diabetes is for these type of diabetes.     
 
-#,
-#            drug_category = drug_category [which.max(total_paid_quantity)]
+### GT Table
+
+The table displays the rate of number of prescriptions and number of stroke and cardiovascular deaths per 100K along with the average SIMD. It compares this among each health board and finds the overall average.
+
+```{r}
 gt_data %>%  
   gt() %>% 
      cols_label(
@@ -243,16 +241,30 @@ gt_data %>%
        cardiovascular = "Number of Cardiovascular Deaths",
        stroke = "Number of Stroke Deaths",
        hb_name = "Health Board Name"
-     ) %>% 
+     ) %>% #Renames the column names
      cols_align(
        align = "center",
        columns = everything()
-     ) %>% 
- grand_summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% 
-     fmt_number(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), decimals = 2) %>% 
-     tab_header(title = "Prescriptions of Diabetes Drugs and Cardiovascular Mortality Rates and How That Compares Across Socieconomically Diverse Regions",
-                subtitle = "Grouped by Health Board") %>% 
+     ) %>%  #Aligns the columns
+ grand_summary_rows(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), fns = list("Overall Average" = ~round(mean(., na.rm = TRUE), 2))) %>% #Adds in overall averages
+     fmt_number(columns = c(total_paid_quantity, ar_simd, stroke, cardiovascular), decimals = 2) %>% #Rounds each column
+     tab_header(title = "Prescriptions of Diabetes Drugs and Cardiovascular Mortality Rates and How That Compares Across Socieconomically Diverse Regions in 2020",
+                subtitle = "Grouped by Health Board") %>% #Adds in titles
      tab_spanner(label = "Rate per 100k",
-              columns = c(total_paid_quantity, stroke, cardiovascular))
+              columns = c(total_paid_quantity, cardiovascular, stroke)) #Adds in rate per 100k
 ```
+We can see that with the decrease in SIMD rank (increase in deprivation), there is an increase in diabetes prescriptions as well as cardiovascular and stroke mortality. This is particularly evident in the healthboard NHS Ayrshire and Arran where the rate of diabetes prescriptions and mortality is markedly increased with an increased deprivation.
 
+## Conclusion
+This project explores the multifaceted relationship between diabetes and deprivation and cardiovascular and stroke mortality. For deprivation, the analysis demonstrated a clear linear relationship between the prescription of diabetes medication and deprivation which is in line with the NHS report which stated that patients were prescribed 2.5 times the diabetes medication in the most deprived areas compared to the least deprived areas (NHS, 2022b). As for stroke and cardiovascular mortality, an increase in diabetes medications was correlated with an increase in stroke and cardiovascular mortality. This adds to the existing body of evidence such as the paper by Manson (1991) which demonstrated an increase in cardiovascular and stroke mortality in those with diabetes. These finidings demonstrate the need for increased research in this field and underscores the clinical importance of wide-scale policy change for deprivation and the dissemination of prevention information to the general public.
+
+The number of pages without table of contents is 13.
+
+## References
+Castro, A.F. and Aliakbar Akbaritabar (2024). The use of linear models in quantitative research. Quantitative science studies, pp.1–32. doi:https://doi.org/10.1162/qss_a_00294.
+
+Manson, J.E. (1991). A Prospective Study of Maturity-Onset Diabetes Mellitus and Risk of Coronary Heart Disease and Stroke in Women. Archives of Internal Medicine, 151(6), p.1141. doi:https://doi.org/10.1001/archinte.1991.00400060077013.
+
+NHS (2022a). Cardiovascular disease. [online] NHS. Available at: https://www.nhs.uk/conditions/cardiovascular-disease/.
+
+NHS (2022b). Prescribing for Diabetes – England – 2015/16 to 2021/22 | NHSBSA. [online] www.nhsbsa.nhs.uk. Available at: https://www.nhsbsa.nhs.uk/statistical-collections/prescribing-diabetes-england/prescribing-diabetes-england-201516-202122.
